@@ -85,7 +85,7 @@ if __name__ == "__main__":
         camera.set_image_type(asi.ASI_IMG_RAW8)
     
     # Forever loop
-    while True:
+    for i in range(12):
         # Capture frame
         t0 = time.time()
         img = camera.capture_video_frame()
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         print(nfd, texp, gain, temp)
         
         # Store FITS file
-        write_fits_file(os.path.join(path, "%s.fits" % nfd), img, nfd, texp, gain, temp)
+        write_fits_file(os.path.join(path, "%s.fits" % nfd), np.flipud(img), nfd, texp, gain, temp)
             
         # Get RGB image
         if int(settings["type"]) == asi.ASI_IMG_RAW8:
@@ -131,5 +131,3 @@ if __name__ == "__main__":
     # Stop capture
     camera.stop_video_capture()
 
-    # Close file
-    fstat.close()
