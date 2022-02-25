@@ -1,12 +1,12 @@
 {
     "exposure":"10000",
     "gain":"300",
-    "gamma":"100",
+    "gamma":"0",
     "brightness":"10",
     "wbr":"70",
     "wbb":"90",
     "bin":"1",
     "type":"0",
-    "usb":"40",
+    "usb":"90",
     "flip":"0"
 }
