@@ -13,8 +13,15 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser(
         description="Capture images with an ASI CMOS camera")
-    parser.add_argument("-s", "--settings", help="JSON file with settings", default=None)
+    parser.add_argument("-s", "--settings", help="JSON file with settings", default="settings.json")
     parser.add_argument("-p", "--path", help="Output path", default=None)
+    parser.add_argument("-t", "--exptime", help="Exposure time [seconds]", type=float, default=None)
+    parser.add_argument("-g", "--gain", help="Gain", type=int, default=None)
+    parser.add_argument("-b", "--bin", help="Binning factor", type=int, default=None)
+    parser.add_argument("-n", "--number", help="Number of images to acquire", type=int, default=None)
+    parser.add_argument("-F", "--format", help="Data format [RAW8, RAW16, RGB24]", default=None)
+    parser.add_argument("-l", "--live", action="store_true", help="Display live image while capturing")
+    parser.add_argument("-w", "--wait", help="Wait time between exposures [seconds]", type=float, default=0)
     args = parser.parse_args()
 
     # Check arguments
@@ -29,6 +36,28 @@ if __name__ == "__main__":
     except Exception as e:
         print(e)
         sys.exit(1)
+
+    # Override settings
+    if args.exptime is not None:
+        settings["exposure"] = f"{int(float(args.exptime) * 1000)}"
+    if args.gain is not None:
+        settings["gain"] = f"{args.gain}"
+    if args.bin is not None:
+        settings["bin"] = f"{args.bin}"
+    if args.format is not None:
+        if args.format == "RAW8":
+            settings["type"] = f"{asi.ASI_IMG_RAW8}"
+        elif args.format == "RAW16":
+            settings["type"] = f"{asi.ASI_IMG_RAW16}"
+        elif args.format == "RGB24":
+            settings["type"] = f"{asi.ASI_IMG_RGB24}"
+
+    # Number of images
+    if args.number is not None:
+        nimg = args.number
+    else:
+        nimg = 6
+    
 
     # Check path
     path = os.path.abspath(args.path)
@@ -59,9 +88,7 @@ if __name__ == "__main__":
     # Set control values
     camera.set_control_value(asi.ASI_BANDWIDTHOVERLOAD, int(settings["usb"]))
     camera.set_control_value(asi.ASI_EXPOSURE, texp_us, auto=False)
-    #camera.set_control_value(asi.ASI_AUTO_MAX_EXP, texp_us_max // 1000)
     camera.set_control_value(asi.ASI_GAIN, gain, auto=False)
-    #camera.set_control_value(asi.ASI_AUTO_MAX_GAIN, gain_max)
     camera.set_control_value(asi.ASI_WB_B, int(settings["wbb"]))
     camera.set_control_value(asi.ASI_WB_R, int(settings["wbr"]))
     camera.set_control_value(asi.ASI_GAMMA, int(settings["gamma"]))
@@ -71,9 +98,15 @@ if __name__ == "__main__":
     camera.disable_dark_subtract()
     camera.set_roi(bins=int(settings["bin"]))
 
-    # Start capture
-    camera.start_video_capture()
-
+    # Force any single exposure to be halted
+    try:
+        camera.stop_video_capture()
+        camera.stop_exposure()
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except:
+        pass
+    
     # Set image format
     if int(settings["type"]) == asi.ASI_IMG_RAW8:
         camera.set_image_type(asi.ASI_IMG_RAW8)
@@ -85,18 +118,20 @@ if __name__ == "__main__":
         camera.set_image_type(asi.ASI_IMG_RAW8)
     
     # Forever loop
-    for i in range(12):
+    for i in range(nimg):
+        print(f"Capturing image {i} of {nimg}")
         # Capture frame
         t0 = time.time()
-        img = camera.capture_video_frame()
+        img = camera.capture()
+        
+        # Display Frame
+        if args.live is True:
+            cv2.imshow("Capture", img)
+            cv2.waitKey(1)
         
         # Get settings
         camera_settings = camera.get_control_values()
-
-        # Stability test
-        if texp_us == camera_settings["Exposure"] and gain == camera_settings["Gain"]:
-            stable = True
-
+        
         # Extract settings
         texp_us = camera_settings["Exposure"]
         texp = float(texp_us) / 1000000
@@ -111,7 +146,9 @@ if __name__ == "__main__":
         
         # Store FITS file
         write_fits_file(os.path.join(path, "%s.fits" % nfd), np.flipud(img), nfd, texp, gain, temp)
-            
+
+        #print(settings["type"], asi.ASI_IMG_RAW8, asi.ASI_IMG_RGB24, asi.ASI_IMG_RAW16)
+        
         # Get RGB image
         if int(settings["type"]) == asi.ASI_IMG_RAW8:
             ny, nx = img.shape
@@ -125,9 +162,15 @@ if __name__ == "__main__":
             rgb_img = cv2.cvtColor(img_8bit, cv2.COLOR_BAYER_BG2BGR)
 
         # Store image
-        if stable:
-            cv2.imwrite(os.path.join(path, "%s.jpg" % nfd), rgb_img)
+        cv2.imwrite(os.path.join(path, "%s.jpg" % nfd), rgb_img)
+
+        # Wait
+        if args.wait > 0:
+            time.sleep(args.wait)
 
     # Stop capture
     camera.stop_video_capture()
 
+    # Release device
+    if args.live is True:
+        cv2.destroyAllWindows()
